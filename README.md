@@ -5,7 +5,11 @@ vir_md_analysis
 [![codecov](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/vir_md_analysis/branch/main/graph/badge.svg)](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/vir_md_analysis/branch/main)
 
 
-Modules for performing analysis on vir_melt MD trajectories
+Modules for performing analysis on MD trajectories for the VirMelt project.
+
+This repo is devoted to 1) writing and testing function for creating descriptors from MD trajectories and 2) training machine learning models on those descriptors to predict protein thermal stability. 
+
+This is based on the work from the [AbMelt](https://www.sciencedirect.com/science/article/abs/pii/S0006349524003850) paper by Rollins et al. 
 
 ### Copyright
 

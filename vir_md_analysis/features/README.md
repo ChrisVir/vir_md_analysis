@@ -8,7 +8,7 @@ The features of interest from the paper are:
 6. Root mean-square fluctuation (RMSF)
 7. $S^2$:N-H bond vector order parameter of FV substructure at T. 
 8. $\Lambda$ dimensionless number related to heat capacity which quantifies the temperature dependence of $S^2$. 
-9.$r-\Lambda$ coefficient of determination of the linear fit of $S^2$ vs. temperature for $\Lambda$ values.
+9. $r-\Lambda$ coefficient of determination of the linear fit of $S^2$ vs. temperature for $\Lambda$ values.
 
 The features are calculated using the MDAnalysis library.
 The features are calculated for each frame of the trajectory and then averaged over the trajectory.

@@ -122,3 +122,9 @@ ENV/
 */_version.py
 # Cookiecutter-CMS Test Artifacts
 /tests/CI_files
+
+
+vir_md_analysis/data/*.nc
+vir_md_analysis/data/*.dcd
+vir_md_analysis/data/*.psf
+vir_md_analysis/data/*.pdb

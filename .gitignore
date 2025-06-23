@@ -128,3 +128,7 @@ vir_md_analysis/data/*.nc
 vir_md_analysis/data/*.dcd
 vir_md_analysis/data/*.psf
 vir_md_analysis/data/*.pdb
+vir_md_analysis/data/*.out
+vir_md_analysis/data/*.info
+vir_md_analysis/data/*.parm7
+vir_md_analysis/data/*.rst

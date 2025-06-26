@@ -77,3 +77,71 @@ def label_chains(traj: pt.Trajectory, scheme: str = 'imgt') -> pd.DataFrame:
             dfs.append(pd.concat([mol_df.reset_index(drop=True), region_df], axis=1))
 
     return pd.concat(dfs).reset_index(drop=True).fillna('')
+
+
+def format_mdtraj_selection(start_residue: int, end_residue: int, backbone_only: bool = True) -> str:
+    """Format a selection string for mdtraj.
+    Parameters:
+        start_residue: int
+            The starting residue number.
+        end_residue: int
+            The ending residue number.
+        backbone_only: bool
+            If True, only select the backbone atoms.
+    Returns:
+        str
+            A formatted selection string for mdtraj.
+    """
+    if backbone_only:
+        return f"resid {start_residue} to {end_residue} and backbone"
+    else:
+        return f"resid {start_residue} to {end_residue}"
+
+
+def format_pytraj_selection(start_residue: int, end_residue: int) -> str:
+    """Format a selection string for pytraj.
+    Parameters:
+        start_residue: int
+            The starting residue number.
+        end_residue: int
+            The ending residue number.
+    Returns:
+        str
+            A formatted selection string for pytraj.
+    """
+    return f":{start_residue}-{end_residue}"
+
+
+def get_start_end_residues(region: str, regions_df: pd.DataFrame) -> tuple[int, int]:
+    """Get the start and end residues for a given region.
+    Parameters:
+        region: str
+            The name of the region (e.g., 'CDR1', 'CDR2', etc.).
+        regions_df: pd.DataFrame
+            A DataFrame containing region information.
+    Returns:
+        tuple[int, int]
+            A tuple containing the start and end residue numbers for the specified region.
+    """
+    if region not in regions_df['region'].values:
+        raise ValueError(f"Region '{region}' not found in regions DataFrame.")
+
+    region_df = regions_df.query('region == @region')
+    start, stop = region_df['resid'].min(), region_df['resid'].max()
+    return start, stop
+
+
+def create_region_position_map(region_df: pd.DataFrame) -> dict[str, tuple[int, int]]:
+    """Create a mapping of regions to their start and end residue numbers.
+    Parameters:
+        region_df: pd.DataFrame
+            A DataFrame containing region information.
+    Returns:
+        dict[str, tuple[int, int]]
+            A dictionary mapping region names to tuples of (start_residue, end_residue).
+    """
+    region_position_map = {}
+    for region in region_df['region'].unique():
+        start, stop = get_start_end_residues(region, region_df)
+        region_position_map[region] = (start, stop)
+    return region_position_map

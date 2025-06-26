@@ -132,3 +132,4 @@ vir_md_analysis/data/*.out
 vir_md_analysis/data/*.info
 vir_md_analysis/data/*.parm7
 vir_md_analysis/data/*.rst
+vir_md_analysis/data/*.csv

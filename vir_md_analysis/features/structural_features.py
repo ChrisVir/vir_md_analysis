@@ -5,6 +5,7 @@ import pandas as pd
 from Bio.SeqUtils import seq1
 import numpy as np
 import scipy as sp
+from collections import defaultdict
 
 # Maximum surface area for each amino acid type from Tien et al # (2013)
 # "Maximum Allowed Solvent Accessibilites of Residues in Proteins
@@ -186,7 +187,7 @@ def compute_sasa(traj, region_map: pd.DataFrame = None,
         sasa_df = pd.DataFrame(sasa_df, columns=region_map.index)
         sasa_df = sasa_df.rename(columns=region_map.to_dict())
 
-    return sasa_df, results[1]
+    return sasa_df
 
 
 def identify_hydrogen_bonds(traj: md.Trajectory, region: str | None = None, method: str = 'baker',
@@ -210,6 +211,10 @@ def identify_hydrogen_bonds(traj: md.Trajectory, region: str | None = None, meth
     Returns:
         pd.DataFrame: A DataFrame containing the hydrogen bond data for the specified region.
         Exact output format may vary based on the method used.
+
+    ##TODO: We should split this funtion into three separate functions for each method
+    ##       to avoid confusion and make it easier to use.
+    ##       This will also allow us to handle the different return types more cleanly.
     """
     if region:
         traj = select_mdtraj_atoms(traj, region=region)
@@ -238,8 +243,12 @@ def identify_hydrogen_bonds(traj: md.Trajectory, region: str | None = None, meth
     elif method == 'wernet':
         hbonds = md.wernet_nilsson(traj, exclude_water=exclude_water, periodic=periodic,
                                    sidechain_only=sidechain_only)
-        num_hbonds_per_frame = (wernet_nilsson_hbond_results_to_dataframes(hbonds)
-                                .sum(axis=0))
+
+        num_hbonds_per_frame = (format_wernet_nilsson_hbond_results_to_dataframe(hbonds)
+                                .sum(axis=0)
+                                .reset_index()
+                                .rename(columns={'index': 'Frame', 0: 'Number of Hydrogen Bonds'})
+                                )
 
         return num_hbonds_per_frame
 
@@ -326,11 +335,11 @@ def determine_residues_in_hydrogen_bonds(ks_results: list[sp.sparse.csc_matrix],
     return hbonds_df.round(digits)
 
 
-def wernet_nilsson_hbond_results_to_dataframes(ws_results: pd.DataFrame) -> list[pd.DataFrame]:
+def convert_wernet_nilsson_hbond_results_to_dataframes(ws_results: list[np.ndarray]) -> list[pd.DataFrame]:
     """Convert Wernet-Nilsson hydrogen bond results to a list of DataFrames.
 
     Args:
-        ws_results (pd.DataFrame): DataFrame containing Wernet-Nilsson hydrogen bond results.
+        ws_results (list[np.ndarray]): List of NumPy arrays containing Wernet-Nilsson hydrogen bond results.
 
     Returns:
         list[pd.DataFrame]: List of DataFrames, each representing hydrogen bond information for a specific frame.
@@ -341,15 +350,19 @@ def wernet_nilsson_hbond_results_to_dataframes(ws_results: pd.DataFrame) -> list
     return dfs
 
 
-def wernet_nilsson_hbonds_to_number_contacts_by_frame_df(ws_results: pd.DataFrame) -> pd.DataFrame:
-    """Convert Wernet-Nilsson hydrogen bond results to a DataFrame with counts of contacts by frame.
+def format_wernet_nilsson_hbond_results_to_dataframe(ws_results: list[pd.DataFrame]) -> pd.DataFrame:
+    """Convert Wernet-Nilsson hydrogen bond results to a DataFrame with columns for donor, hydrogen, and acceptor
+    and columns indicating whether the contact exists in each frame.
 
     Args:
         ws_results (pd.DataFrame): DataFrame containing Wernet-Nilsson hydrogen bond results.
 
     Returns:
-        pd.DataFrame: DataFrame with counts of contacts by frame.
+        pd.DataFrame: DataFrame with hbonds  by frame, where each row represents a unique hydrogen bond
+        and each column represents a frame. The DataFrame contains columns for donor, hydrogen, acceptor, and
+        the number of frames in which each hydrogen bond is present.
     """
+    # ws_results = convert_wernet_nilsson_hbond_results_to_dataframes(ws_results)
     frame_dict = {}
     n = len(ws_results)
     for i, res in enumerate(ws_results):
@@ -363,8 +376,10 @@ def wernet_nilsson_hbonds_to_number_contacts_by_frame_df(ws_results: pd.DataFram
                                            hydrogen=pd.Series(df.index).apply(lambda x: x[1]),
                                            acceptor=pd.Series(df.index).apply(lambda x: x[2])))
 
-    contacts_by_frame_df = pd.concat([donor_hydrogen_acceptor, df.reset_index(drop=True)], axis=1)
-    return contacts_by_frame_df.set_index(['donor', 'hydrogen', 'acceptor'])
+    hbonds_by_frame_df = (pd.concat([donor_hydrogen_acceptor, df.reset_index(drop=True)], axis=1)
+                            .set_index(['donor', 'hydrogen', 'acceptor'])
+                          )
+    return hbonds_by_frame_df
 
 
 def identify_stable_hydrogen_bonds_from_wernet_nilsson(hydrogens_df: pd.DataFrame,
@@ -484,7 +499,9 @@ def compute_rmsf_on_specific_regions(traj: md.Trajectory, region: str | None = '
 
 def compute_contacts_on_specific_regions(traj: md.Trajectory, region: str | None = None,
                                          cutoff: float = 0.45, contacts: str = 'all',
-                                         scheme: str = 'closest-heavy') -> tuple[pd.Series, np.ndarray, np.ndarray]:
+                                         scheme: str = 'closest-heavy',
+                                         return_all: bool = False) -> (pd.Series |
+                                                                       tuple[pd.Series, np.ndarray, np.ndarray]):
     """
     Compute the number of contacts in a specific region of a trajectory.
     Args:
@@ -510,47 +527,54 @@ def compute_contacts_on_specific_regions(traj: md.Trajectory, region: str | None
     distances, atom_pairs = md.compute_contacts(traj, contacts=contacts, scheme=scheme, periodic=True)
     num_contacts = pd.Series((distances <= cutoff).sum(axis=1))
 
-    return num_contacts, distances, atom_pairs
+    if return_all:
+        return num_contacts, distances, atom_pairs
+    return num_contacts
 
 
 # ------------------------------------------------------------------------
 # PyTraj Feature Extraction Functions
 # ------------------------------------------------------------------------
 
-def identify_chains_from_pytraj_trajectory(traj: pt.Trajectory, chain_names: list[str] | None) -> list[int]:
+
+def get_residue_chain_id(residue, traj: pt.Trajectory) -> int:
+    """Get the chain ID of a residue in a Pytraj trajectory.
+    Args:
+        residue: A residue object from the trajectory.
+        traj: The Pytraj trajectory object.
+    Returns:
+        int: The chain ID of the residue.
     """
-    Identify chains in a PyTraj trajectory.
 
-    Parameters
-    ----------
-    traj : pytraj.Trajectory
-        The trajectory object.
-    chain_names : list[str] | None
-        A list of chain names to identify. If None, all chains will be identified.
+    first_atom_index = residue.first_atom_index
+    chain_id = traj.top[first_atom_index].chain
+    return chain_id
 
-    Returns
-    -------
-    indices : list[int]
-        A list of indices representing the start of each chain.
+
+def identify_chains_from_pytraj_trajectory(traj: pt.Trajectory,
+                                           chain_names: list[str] | None = None) -> dict[list[int]]:
+    """Identify chains in a pytraj trajectory.
+    traj: pt.Trajectory
+        The pytraj trajectory object.
+    chain_names: list of str or None
+        List of chain names to filter. If None, all chains are returned.
+    Returns:
+        chains: defaultdict
+            A dictionary where keys are chain names and values are lists of residue indices in that chain.
     """
-    chains = {}
-    if chain_names is None:
-        chain_names = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split()
-    else:
-        chain_names.append('Other')
-    chainid = 0
-    chain_name = chain_names[chainid]
-    chain = []
-    for i, res in enumerate(traj.top.residues):
-        first_atom = traj.top[res.first_atom_index]
-        if first_atom.chain != chainid:
-            chains[chain_name] = chain
-            chainid += 1
-            chain_name = chain_names[chainid]
-            chain = []
-        chain.append(i+1)  # +1 to convert from 0-based index to 1-based index
+    num_chains = traj.top.n_mols
 
-    chains[chain_name] = chain  # add the last chain
+    if not chain_names:
+        chain_names = [f'Chain {i+1}' for i in range(num_chains)]
+
+    chains = defaultdict(list)
+
+    for residue in traj.top.residues:
+        chain_id = get_residue_chain_id(residue, traj)
+        chain_name = chain_names[chain_id]
+
+        chains[chain_name].append(residue.index)
+
     return chains
 
 
@@ -581,10 +605,39 @@ def select_chains(traj: pt.Trajectory, select_chains: list[str], chains: dict[st
     return traj[residue_query]
 
 
-def calculate_s2_parameter(traj: pt.Trajectory, chains: list[str] | None = None,
+def identify_nh_bonds(traj: pt.Trajectory,
+                      resids: tuple[int, int] | None = None) -> list[tuple[int, int]]:
+    """Identify NH bonds in the trajectory.
+    Args:
+        traj: pytraj.Trajectory
+            The trajectory object.
+        resids: tuple[int, int] | None
+            A tuple of residue indices to filter the bonds. If None, all NH bonds will be identified.
+    Returns:
+        list[tuple[int, int]]
+            A list of tuples, where each tuple contains the indices of the nitrogen and hydrogen atoms.
+    """
+    nh_bonds = []
+    if resids is not None:
+        # Filter bonds based on the specified residue indices
+        traj = traj[f':{resids[0]}-{resids[1]}']
+
+    h_types = {'H', 'HN', 'H1', 'H2', 'H3'}
+    for bond in traj.top.bonds:
+        atom1, atom2 = bond.indices.tolist()
+        if np.abs(atom2 - atom1) == 1:
+            if (traj.top.atom(atom1).type == 'N' and
+                    traj.top.atom(atom2).type in h_types):
+                nh_bonds.append((atom1, atom2))
+    nh_bonds.sort(key=lambda x: x[0])  # Sort by the first atom index
+    return nh_bonds
+
+
+def calculate_s2_parameter(traj: pt.Trajectory,
+                           chains: str | list[str] | None = None,
                            chains_dict: dict[str, list[int]] | None = None,
-                           tcorr: int = 4000, tstep: float = 1.0,
-                           h_symbol: str = 'HN') -> pd.DataFrame:
+                           tcorr: int = 4000,
+                           tstep: float = 1.0) -> pd.DataFrame:
     """
     Calculate the S2 order parameter for a trajectory.
 
@@ -592,17 +645,15 @@ def calculate_s2_parameter(traj: pt.Trajectory, chains: list[str] | None = None,
     ----------
     traj : pytraj.Trajectory
         The trajectory object.
-    chains : dict[str, list[int]] | None
+    chains : str| list[str] | None
+        List of chain names to include in the calculation.
+    chains_dict : dict[str, list[int]] | None
         A dictionary mapping chain names to lists of residue indices.
         If None, all chains will be included.
     tcorr : int
         The correlation time in picoseconds.
     tstep : float
         The time step in nanoseconds.
-    h_symbol : str
-        The symbol for the hydrogen atom to use in the calculation.
-        Default is 'HN' for backbone amide hydrogens.
-
 
     Returns
     -------
@@ -612,17 +663,9 @@ def calculate_s2_parameter(traj: pt.Trajectory, chains: list[str] | None = None,
     if chains is not None and chains_dict is not None:
         traj = select_chains(traj, select_chains=chains, chains=chains_dict)
 
-    n_residues = traj.top.n_residues
-    H_mask = ':' + ','.join(str(i) for i in range(2, n_residues+1)) + f'@{h_symbol}'
-
-    h_indices = pt.select_atoms(traj.top, H_mask)
-
-    # select N (backbone) indices
-    n_indices = h_indices - 1
-
-    # create pairs
-    nh_pairs = list(zip(n_indices, h_indices))
-
+    nh_pairs = identify_nh_bonds(traj)
     s2 = pt.NH_order_parameters(traj, nh_pairs, tcorr=tcorr, tstep=tstep)
 
-    return pd.DataFrame({'Residue': range(1, len(s2)+1), 'S2': s2})
+    return (pd.DataFrame({'Residue': range(1, len(s2)+1), 'S2': s2})
+            .set_index('Residue')
+            )

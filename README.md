@@ -11,6 +11,22 @@ This repo is devoted to 1) writing and testing function for creating descriptors
 
 This is based on the work from the [AbMelt](https://www.sciencedirect.com/science/article/abs/pii/S0006349524003850) paper by Rollins et al. 
 
+
+### To extract features from MD trajectories
+1. Install the package using `pip install -e .`
+2. Run the `extract_features` command line tool with the appropriate arguments, e.g
+    ```bash
+    extract_features --traj trajectory.nc --top topology.nc --topology 'my_system'
+    ```
+See the cli help for more details:
+```bash
+extract_features --help
+```
+
+Note that the only netcdf files and prmtop files are supported at the moment. The topology file should be a prmtop file, and the trajectory file should be a netcdf file.
+
+
+
 ### Copyright
 
 Copyright (c) 2025, VirBiotech/MLTeam

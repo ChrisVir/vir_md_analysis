@@ -147,8 +147,7 @@ def compute_radius_of_gyration_by_region(traj: md.Trajectory, region: str = 'bac
 
 
 def compute_sasa_per_frame(traj: md.Trajectory,
-                           chains: list[str] = None,
-                           selection: str = None,
+                           region: str | None = None,
                            relative: bool = True,
                            return_sasa_per_residue: bool = False) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
     """
@@ -158,11 +157,8 @@ def compute_sasa_per_frame(traj: md.Trajectory,
     ----------
     traj : mdtraj.Trajectory
         The trajectory object.
-    chains : list[str]
-        A list of chain IDs to include in the SASA calculation.
-        If None, all chains will be included.
-    selection : str
-        A selection string to filter atoms in the trajectory.
+    region : str | None
+        A region string to filter atoms in the trajectory.
         If None, all atoms will be included.
     relative : bool
         If True, the SASA will be calculated relative to the maximum possible SASA for each
@@ -179,13 +175,8 @@ def compute_sasa_per_frame(traj: md.Trajectory,
     # TODO: Refactor this to handle regions more flexibly and simplify the logic.
     """
 
-    if chains:
-        # Select atoms based on the chain IDs
-        region = ' or '.join([f'chainid {chainid}' for chainid in chains])
+    if region:
         traj = select_mdtraj_atoms(traj, region=region)
-    elif selection:
-        # Select atoms based on the provided selection string
-        traj = select_mdtraj_atoms(traj, region=selection)
 
     results = md.shrake_rupley(traj, get_mapping=True, mode='residue')
     sasa_per_residue = pd.DataFrame(results[0], columns=traj.topology.residues)
@@ -193,11 +184,11 @@ def compute_sasa_per_frame(traj: md.Trajectory,
     amino_acids = [seq1(residue.name) for residue in traj.topology.residues]
     total_possible_sasa = sum([max_aa_sasa[aa] for aa in amino_acids])
 
-    sasa_per_frame = pd.DataFrame({'SASA': sasa_per_residue.sum(axis=1),
+    sasa_per_frame = pd.DataFrame({'SASA (A^2)': sasa_per_residue.sum(axis=1),
                                   'Frame': range(len(sasa_per_residue))})
     if relative:
         # Calculate relative SASA
-        sasa_per_frame['SASA'] = sasa_per_frame['SASA'] / total_possible_sasa
+        sasa_per_frame['Relative SASA'] = sasa_per_frame['SASA (A^2)'] / total_possible_sasa
 
     if return_sasa_per_residue:
         return sasa_per_frame, sasa_per_residue
@@ -205,7 +196,7 @@ def compute_sasa_per_frame(traj: md.Trajectory,
     return sasa_per_frame
 
 
-def identify_hydrogen_bonds(traj: md.Trajectory, region: str | None = None, method: str = 'baker',
+def identify_hydrogen_bonds(traj: md.Trajectory, region: str | None = None, method: str = 'kabsch_sander',
                             freq: float = 0.1, exclude_water: bool = True, periodic: bool = True,
                             sidechain_only: bool = False, distance_cutoff: float = 0.35) -> pd.DataFrame:
     """ computes the hydrogen in a trajectory for a specific region using MDTraj.
@@ -214,7 +205,7 @@ def identify_hydrogen_bonds(traj: md.Trajectory, region: str | None = None, meth
         region (str): The region of the protein to calculate the hydrogen bonds for.
                       The regions can be any as defined by MDTRaj selection language.
                       Optional, defaults to None, which means all atoms in the trajectory will be considered.
-        method (str): The method to use for calculating hydrogen bonds. Can be 'baker', 'kabsh' or 'wernet'
+        method (str): The method to use for calculating hydrogen bonds. Can be 'baker', 'kabsch_sander' or 'wernet'
         freq (float, optional): Threshold for fraction of frames a hydrogen bond must be present to be considered
                                 stable.
         exclude_water (bool, optional): Whether to exclude water molecules from the calculation. Defaults to True.
@@ -234,8 +225,8 @@ def identify_hydrogen_bonds(traj: md.Trajectory, region: str | None = None, meth
     if region:
         traj = select_mdtraj_atoms(traj, region=region)
 
-    if method not in ['baker', 'kabsh', 'wernet']:
-        raise ValueError("Method must be one of 'baker', 'kabsh', or 'wernet'.")
+    if method not in ['baker', 'kabsch_sander', 'wernet']:
+        raise ValueError("Method must be one of 'baker', 'kabsch_sander', or 'wernet'.")
     if method == 'baker':
         # calculate hydrogen bonds using the Baker-Hubbard method
         hbonds = md.baker_hubbard(traj, freq=freq, exclude_water=exclude_water,
@@ -249,7 +240,7 @@ def identify_hydrogen_bonds(traj: md.Trajectory, region: str | None = None, meth
 
         return hbonds_df
 
-    elif method == 'kabsh':
+    elif method == 'kabsch_sander':
         # calculate hydrogen bonds using the Kabsch-Sander method
         hbond_matrices = md.kabsch_sander(traj)
         num_hbonds_per_frame = calculate_number_of_hydrogen_bonds_per_frame(hbond_matrices)
@@ -268,7 +259,7 @@ def identify_hydrogen_bonds(traj: md.Trajectory, region: str | None = None, meth
         return num_hbonds_per_frame
 
     else:
-        raise ValueError("Method must be one of 'baker', 'kabsh', or 'wernet'.")
+        raise ValueError("Method must be one of 'baker', 'kabsch_sander', or 'wernet'.")
 
 
 def calculate_number_of_hydrogen_bonds_per_frame(ks_results: list[sp.sparse._csc.csc_matrix],
@@ -652,6 +643,7 @@ def identify_nh_bonds(traj: pt.Trajectory,
 
 
 def calculate_s2_parameter(traj: pt.Trajectory,
+                           region: str | None = None,
                            chains: str | list[str] | None = None,
                            chains_dict: dict[str, list[int]] | None = None,
                            tcorr: int = 4000,
@@ -663,6 +655,9 @@ def calculate_s2_parameter(traj: pt.Trajectory,
     ----------
     traj : pytraj.Trajectory
         The trajectory object.
+    region : str | None
+        A region string to filter atoms in the trajectory.
+        If None, all atoms will be included.
     chains : str| list[str] | None
         List of chain names to include in the calculation.
     chains_dict : dict[str, list[int]] | None
@@ -678,7 +673,10 @@ def calculate_s2_parameter(traj: pt.Trajectory,
     pd.DataFrame
         A DataFrame containing the S2 order parameter values for each residue.
     """
-    if chains is not None and chains_dict is not None:
+
+    if region:
+        traj = traj[region]
+    elif chains is not None and chains_dict is not None:
         traj = select_chains(traj, select_chains=chains, chains=chains_dict)
 
     nh_pairs = identify_nh_bonds(traj)

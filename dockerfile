@@ -9,16 +9,14 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get -y install nano sudo wget zip
 
-RUN mamba install  -c conda-forge \
-          openmm openmmtools cudatoolkit openmmforcefields mdtraj \
-          python=3.12 numpy pandas sarge typer mdtraj awscli -y \
+RUN mamba install  -c conda-forge -c bioconda \
+        python=3.10 numpy scipy pandas biopython abnumber \ 
+        ambertools mdtraj typer \
     && mamba clean -a -y
 
-RUN pip3 install torch  
+COPY . vir_md_analysis/
 
-COPY . vir_openmm_md/
-
-RUN cd vir_openmm_md/ \
+RUN cd vir_md_analysis/ \
     && pip install -e .
 
 #USER app_user

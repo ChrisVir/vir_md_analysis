@@ -146,48 +146,63 @@ def compute_radius_of_gyration_by_region(traj: md.Trajectory, region: str = 'bac
     return rg_df
 
 
-def compute_sasa(traj, region_map: pd.DataFrame = None,
-                 chains: list[str] = None,
-                 relative: bool = False):
+def compute_sasa_per_frame(traj: md.Trajectory,
+                           chains: list[str] = None,
+                           selection: str = None,
+                           relative: bool = True,
+                           return_sasa_per_residue: bool = False) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Compute the solvent accessible surface area (SASA) of a trajectory.
+    Compute the solvent accessible surface area (SASA) of a trajectory for each frame.
 
     Parameters
     ----------
     traj : mdtraj.Trajectory
         The trajectory object.
-    region_map : pd.DataFrame
-        A DataFrame containing the regions of interest for the SASA calculation.
     chains : list[str]
         A list of chain IDs to include in the SASA calculation.
         If None, all chains will be included.
+    selection : str
+        A selection string to filter atoms in the trajectory.
+        If None, all atoms will be included.
+    relative : bool
+        If True, the SASA will be calculated relative to the maximum possible SASA for each
+    return_sasa_per_residue : bool
+        If True, the SASA will be calculated for each residue and returned as a separate DataFrame.
 
     Returns
     -------
-    sasa_df: pandas.DataFrame
+    sasa_per_frame: pandas.DataFrame
         A DataFrame containing the SASA values for each frame in the trajectory.
+
+    sasa_per_residue: pandas.DataFrame (optional)
+
+    # TODO: Refactor this to handle regions more flexibly and simplify the logic.
     """
 
     if chains:
         # Select atoms based on the chain IDs
         region = ' or '.join([f'chainid {chainid}' for chainid in chains])
         traj = select_mdtraj_atoms(traj, region=region)
+    elif selection:
+        # Select atoms based on the provided selection string
+        traj = select_mdtraj_atoms(traj, region=selection)
 
     results = md.shrake_rupley(traj, get_mapping=True, mode='residue')
-    sasa_df = pd.DataFrame(results[0], columns=traj.topology.residues)
+    sasa_per_residue = pd.DataFrame(results[0], columns=traj.topology.residues)
 
+    amino_acids = [seq1(residue.name) for residue in traj.topology.residues]
+    total_possible_sasa = sum([max_aa_sasa[aa] for aa in amino_acids])
+
+    sasa_per_frame = pd.DataFrame({'SASA': sasa_per_residue.sum(axis=1),
+                                  'Frame': range(len(sasa_per_residue))})
     if relative:
-        aminos = [seq1(residue.name) for residue in traj.topology.residues]
-        for aa, col in zip(aminos, sasa_df.columns):
-            sasa_df[col] /= (max_aa_sasa[aa]/100)
+        # Calculate relative SASA
+        sasa_per_frame['SASA'] = sasa_per_frame['SASA'] / total_possible_sasa
 
-    if region_map is not None:
-        # Map the SASA values to the regions
-        region_map = region_map.set_index('residue')
-        sasa_df = pd.DataFrame(sasa_df, columns=region_map.index)
-        sasa_df = sasa_df.rename(columns=region_map.to_dict())
+    if return_sasa_per_residue:
+        return sasa_per_frame, sasa_per_residue
 
-    return sasa_df
+    return sasa_per_frame
 
 
 def identify_hydrogen_bonds(traj: md.Trajectory, region: str | None = None, method: str = 'baker',
@@ -525,7 +540,10 @@ def compute_contacts_on_specific_regions(traj: md.Trajectory, region: str | None
 
     # Compute contacts for the selected region
     distances, atom_pairs = md.compute_contacts(traj, contacts=contacts, scheme=scheme, periodic=True)
-    num_contacts = pd.Series((distances <= cutoff).sum(axis=1))
+    num_contacts = (pd.DataFrame({'Number of Contacts': (distances <= cutoff).sum(axis=1),
+                                 'Frame': range(len(distances))}))
+
+    num_contacts = num_contacts.set_index('Frame')
 
     if return_all:
         return num_contacts, distances, atom_pairs

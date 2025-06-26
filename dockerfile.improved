@@ -29,6 +29,7 @@ RUN mamba install -c conda-forge -c bioconda \
         ambertools>=22.0 \
         mdtraj>=1.9.0 \
         typer>=0.7.0 \
+        pip -y\
     && mamba clean -a -y
 
 # Install optional dependencies for notebooks (if needed)

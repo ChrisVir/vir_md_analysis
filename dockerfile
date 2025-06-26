@@ -11,7 +11,7 @@ RUN apt-get update \
 
 RUN mamba install  -c conda-forge -c bioconda \
         python=3.10 numpy scipy pandas biopython abnumber \
-        ambertools mdtraj typer \
+        ambertools mdtraj typer pip -y \
     && mamba clean -a -y
 
 COPY . vir_md_analysis/

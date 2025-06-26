@@ -20,16 +20,7 @@ classifiers = [
 ]
 requires-python = ">=3.8"
 # Declare any run-time dependencies that should be installed with the package.
-dependencies = [
-    "mdtraj",
-    "ambertools", 
-    "pandas",
-    "numpy",
-    "scipy",
-    "biopython",
-    "abnumber",
-    "typer",
-]
+
 
 # Update the urls once the hosting is set up.
 #[project.urls]

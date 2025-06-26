@@ -10,7 +10,7 @@ RUN apt-get update \
     && apt-get -y install nano sudo wget zip
 
 RUN mamba install  -c conda-forge -c bioconda \
-        python=3.10 numpy scipy pandas biopython abnumber \ 
+        python=3.10 numpy scipy pandas biopython abnumber \
         ambertools mdtraj typer \
     && mamba clean -a -y
 
